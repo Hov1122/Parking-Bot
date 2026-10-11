@@ -102,6 +102,8 @@ The spot layout (numbers, reserved/rotating type, physical positions) lives in
 |---------|--------|
 | `/adduser <name>` | Pre-create a user account (they bind on approval) |
 | `/deluser <name or tg-id>` | Delete a user (frees their spot, drops their data) |
+| `/makeadmin <name or tg-id>` | Grant admin rights (approvals, admin commands) |
+| `/demote <name or tg-id>` | Remove admin rights (last admin is protected) |
 | `/users` | List registered users and pending approval requests |
 | `/approve <tg-id>` / `/reject <tg-id>` | Resolve a request without the buttons |
 | `/spots` | List every spot, owner and today's state |

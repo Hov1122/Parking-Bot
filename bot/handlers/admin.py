@@ -34,6 +34,8 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "<b>Admin commands</b>\n\n"
         "• /adduser &lt;name&gt; — pre-create a user account\n"
         "• /deluser &lt;name or tg-id&gt; — delete a user\n"
+        "• /makeadmin &lt;name or tg-id&gt; — grant admin rights\n"
+        "• /demote &lt;name or tg-id&gt; — remove admin rights\n"
         "• /users — registered users and pending requests\n"
         "• /spots — every spot, owner and today's state\n"
         "• /assign &lt;spot#&gt; &lt;name or telegram-id&gt; — give a spot\n"
@@ -111,6 +113,76 @@ async def cmd_deluser(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         "unassigned and their openings/claims are gone.",
         None,
     )
+
+
+async def cmd_makeadmin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if await _guard(update):
+        return
+    args = context.args or []
+    if not args:
+        await reply(update, "Usage: /makeadmin &lt;name or telegram-id&gt;", None)
+        return
+    target = " ".join(args).strip()
+    user = _resolve_user(target)
+    if user is None:
+        await reply(
+            update,
+            f"I couldn't find a unique user matching <b>{escape(target)}</b>.\n"
+            "Use the exact name from /users, or their telegram id.",
+            None,
+        )
+        return
+    if user["is_admin"]:
+        await reply(update, f"<b>{escape(user['name'])}</b> is already an admin.", None)
+        return
+    db.set_admin(user["id"], True)
+    if user["telegram_id"] is not None:
+        await set_role_commands(
+            context.bot,
+            user["telegram_id"],
+            db.user_owns_spot(user["id"]),
+            True,
+        )
+    await reply(
+        update,
+        f"✅ <b>{escape(user['name'])}</b> is now an admin. They get approval "
+        "requests and the admin commands.",
+        None,
+    )
+
+
+async def cmd_demoadmin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if await _guard(update):
+        return
+    args = context.args or []
+    if not args:
+        await reply(update, "Usage: /demote &lt;name or telegram-id&gt;", None)
+        return
+    target = " ".join(args).strip()
+    user = _resolve_user(target)
+    if user is None:
+        await reply(
+            update,
+            f"I couldn't find a unique user matching <b>{escape(target)}</b>.\n"
+            "Use the exact name from /users, or their telegram id.",
+            None,
+        )
+        return
+    if not user["is_admin"]:
+        await reply(update, f"<b>{escape(user['name'])}</b> is not an admin.", None)
+        return
+    if db.count_admins() <= 1:
+        await reply(update, "I can't demote the last admin.", None)
+        return
+    db.set_admin(user["id"], False)
+    if user["telegram_id"] is not None:
+        await set_role_commands(
+            context.bot,
+            user["telegram_id"],
+            db.user_owns_spot(user["id"]),
+            False,
+        )
+    await reply(update, f"✅ <b>{escape(user['name'])}</b> is no longer an admin.", None)
 
 
 async def cmd_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

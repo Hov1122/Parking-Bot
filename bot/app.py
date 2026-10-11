@@ -111,6 +111,8 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("admin", admin.cmd_admin))
     app.add_handler(CommandHandler("adduser", admin.cmd_adduser))
     app.add_handler(CommandHandler("deluser", admin.cmd_deluser))
+    app.add_handler(CommandHandler("makeadmin", admin.cmd_makeadmin))
+    app.add_handler(CommandHandler("demote", admin.cmd_demoadmin))
     app.add_handler(CommandHandler("users", admin.cmd_users))
     app.add_handler(CommandHandler("approve", admin.cmd_approve))
     app.add_handler(CommandHandler("reject", admin.cmd_reject))

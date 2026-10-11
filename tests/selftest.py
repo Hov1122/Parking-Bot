@@ -254,6 +254,12 @@ def main() -> None:
           db.manual_spot(bob["id"])["number"] == 1)
     check("manual_spot is None for a user with no spot",
           db.manual_spot(erin["id"]) is None)
+    check("one admin at first", db.count_admins() == 1)
+    db.set_admin(erin["id"], True)
+    check("second admin promoted", db.count_admins() == 2
+          and db.get_user(erin["id"])["is_admin"] == 1)
+    db.set_admin(erin["id"], False)
+    check("demote restores one admin", db.count_admins() == 1)
 
     # --- Delete a user frees their spot and drops their data ---
     db.assign_spot(9, carol["id"])

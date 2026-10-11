@@ -101,6 +101,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "<b>Admin only</b>\n"
         "• /adduser &lt;name&gt; — pre-create a user account\n"
         "• /deluser &lt;name or tg-id&gt; — delete a user\n"
+        "• /makeadmin &lt;name or tg-id&gt; — grant admin rights\n"
+        "• /demote &lt;name or tg-id&gt; — remove admin rights\n"
         "• /spots — list every spot and its state\n"
         "• /users — list users and pending requests\n"
         "• /assign &lt;spot&gt; &lt;name&gt; — give a spot to a user\n"

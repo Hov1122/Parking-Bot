@@ -39,6 +39,8 @@ ADMIN_COMMANDS = [
     BotCommand("admin", "Admin help"),
     BotCommand("adduser", "Pre-create a user account"),
     BotCommand("deluser", "Delete a user"),
+    BotCommand("makeadmin", "Grant admin rights"),
+    BotCommand("demote", "Remove admin rights"),
     BotCommand("users", "Users and pending requests"),
     BotCommand("approve", "Approve a registration (by telegram id)"),
     BotCommand("reject", "Reject a registration (by telegram id)"),
