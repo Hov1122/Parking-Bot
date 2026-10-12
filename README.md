@@ -95,6 +95,7 @@ The spot layout (numbers, reserved/rotating type, physical positions) lives in
 | `/close` | Take back specific day(s) from your shared spot, or stop sharing entirely |
 | `/claim` | Record that you parked in a free spot |
 | `/release` | Record that you left that spot |
+| `/language` | Toggle English / Հայերեն (also a 🌐 button in the menu) |
 | `/help` | Help text |
 
 **Admin only**

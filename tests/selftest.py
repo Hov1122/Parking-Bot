@@ -254,6 +254,14 @@ def main() -> None:
           db.manual_spot(bob["id"])["number"] == 1)
     check("manual_spot is None for a user with no spot",
           db.manual_spot(erin["id"]) is None)
+    # --- Interface language ---
+    check("new users default to English", db.get_user_by_tg(1002)["lang"] == "en")
+    check("user_lang falls back for unknown rows", db.user_lang(None) == "en")
+    db.set_lang(alice["id"], "hy")
+    check("language persists", db.user_lang(db.get_user(alice["id"])) == "hy")
+    db.set_lang(alice["id"], "xx")
+    check("invalid language falls back to English",
+          db.user_lang(db.get_user(alice["id"])) == "en")
     check("one admin at first", db.count_admins() == 1)
     db.set_admin(erin["id"], True)
     check("second admin promoted", db.count_admins() == 2
@@ -292,6 +300,8 @@ def main() -> None:
     try:
         from bot import keyboards
         from bot.handlers import user as user_handlers
+        from bot import i18n
+        from bot.handlers.common import role_commands
     except ImportError:
         print("[SKIP] keyboard builders (python-telegram-bot not installed)")
     else:
@@ -347,6 +357,25 @@ def main() -> None:
             if b.callback_data.startswith("cal:day:")
         ]
         check("next january days are selectable", len(jan_days) == 31)
+        check("unknown i18n key falls back to English",
+              i18n.t("hy", "btn_menu") == "🏠 Գլխավոր մենյու"
+              and i18n.t("fr", "btn_menu") == "🏠 Main menu")
+        hy_menu = keyboards.main_menu(False, "hy")
+        hy_labels = [b.text for r in hy_menu.inline_keyboard for b in r]
+        check("armenian menu renders",
+              "🌐 Լեզու" in hy_labels and "🅿️ Ազատ տեղեր" in hy_labels)
+        hy_cal = keyboards.datepicker_kb(set(), 2026, 10, min_day=day, lang="hy")
+        check("armenian month title",
+              hy_cal.inline_keyboard[0][0].text.startswith("Հոկտեմբեր"))
+        check("armenian pretty day", i18n.pretty_day("2026-10-12", "hy") == "12.10 (Եկ)")
+        picker = keyboards.language_kb("en")
+        picker_opts = [b.callback_data for r in picker.inline_keyboard for b in r]
+        check("language picker offers both languages",
+              "lang:set:en" in picker_opts and "lang:set:hy" in picker_opts)
+        hy_cmds = role_commands(False, False, "hy")
+        check("command menu localizes",
+              any(c.command == "language" and "լեզու" in c.description.lower() for c in hy_cmds)
+              and any(c.command == "available" for c in hy_cmds))
 
     # Admin notification on registration (catches import/runtime regressions).
     try:

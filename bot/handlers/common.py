@@ -8,31 +8,39 @@ from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from .. import config, db
+from ..i18n import t
 from ..keyboards import main_menu
 
 log = logging.getLogger(__name__)
 
 # --- Role-based Telegram command menus ------------------------------------- #
-_BASE_COMMANDS = [
-    BotCommand("start", "Register / main menu"),
-    BotCommand("menu", "Main menu"),
-    BotCommand("status", "My spot and today"),
-    BotCommand("map", "Parking map"),
+_BASE = ["start", "menu", "status", "map"]
+_OWNER = ["open", "close"]
+_NONOWNER = ["available", "claim", "release"]
+_HELPTAIL = ["help", "language"]
+_ADMIN = [
+    "admin", "adduser", "deluser", "makeadmin", "demote", "users", "approve",
+    "reject", "spots", "assign", "unassign", "settype", "rename",
+    "resetclaims", "cycle", "addcycles", "delcycle", "clearcycles",
 ]
-_OWNER_COMMANDS = [
-    BotCommand("open", "Share my spot"),
-    BotCommand("close", "Stop sharing my spot"),
-]
-_NONOWNER_COMMANDS = [
-    BotCommand("available", "Free spots today"),
-    BotCommand("claim", "I parked in a free spot"),
-    BotCommand("release", "I left my claimed spot"),
-]
-_HELP_COMMAND = [BotCommand("help", "Help")]
+_CMD_KEY = {
+    "start": "cmd_start", "menu": "cmd_menu", "status": "cmd_status",
+    "map": "cmd_map", "open": "cmd_open", "close": "cmd_close",
+    "available": "cmd_available", "claim": "cmd_claim", "release": "cmd_release",
+    "help": "cmd_help", "language": "cmd_language", "admin": "cmd_admin",
+    "adduser": "cmd_adduser", "deluser": "cmd_deluser",
+    "makeadmin": "cmd_makeadmin", "demote": "cmd_demote", "users": "cmd_users",
+    "approve": "cmd_approve", "reject": "cmd_reject", "spots": "cmd_spots",
+    "assign": "cmd_assign", "unassign": "cmd_unassign", "settype": "cmd_settype",
+    "rename": "cmd_rename", "resetclaims": "cmd_resetclaims", "cycle": "cmd_cycle",
+    "addcycles": "cmd_addcycles", "delcycle": "cmd_delcycle",
+    "clearcycles": "cmd_clearcycles",
+}
 
 UNREGISTERED_COMMANDS = [
     BotCommand("start", "Register / main menu"),
     BotCommand("help", "Help"),
+    BotCommand("language", "Switch language"),
 ]
 
 ADMIN_COMMANDS = [
@@ -57,24 +65,35 @@ ADMIN_COMMANDS = [
 ]
 
 
-def role_commands(owns_spot: bool, is_admin: bool = False) -> list[BotCommand]:
-    """The command list a user should see, based on their role."""
-    commands = list(_BASE_COMMANDS)
-    commands += _OWNER_COMMANDS if owns_spot else _NONOWNER_COMMANDS
-    commands += _HELP_COMMAND
+def _cmd(name: str, lang: str) -> BotCommand:
+    return BotCommand(name, t(lang, _CMD_KEY[name]))
+
+
+def role_commands(owns_spot: bool, is_admin: bool = False, lang: str = "en") -> list[BotCommand]:
+    """The command list a user should see, based on role and language."""
+    names = list(_BASE)
+    names += _OWNER if owns_spot else _NONOWNER
+    names += _HELPTAIL
     if is_admin:
-        commands += ADMIN_COMMANDS
-    return commands
+        names += _ADMIN
+    return [_cmd(n, lang) for n in names]
 
 
 async def set_role_commands(
-    bot, chat_id: int, owns_spot: bool, is_admin: bool = False
+    bot, chat_id: int, owns_spot: bool, is_admin: bool = False, lang: str = "en"
 ) -> None:
     """Refresh the per-chat ``/`` command menu so it matches the user's role."""
     try:
         await bot.set_my_commands(
-            role_commands(owns_spot, is_admin), scope=BotCommandScopeChat(chat_id=chat_id)
+            role_commands(owns_spot, is_admin, lang), scope=BotCommandScopeChat(chat_id=chat_id)
         )
+    except BadRequest as exc:
+        if "chat not found" in str(exc).lower():
+            # Approved but never opened the bot (or blocked/deleted it).
+            # The menu is set on their next /start instead.
+            log.info("No Telegram chat yet for %s, command menu skipped.", chat_id)
+        else:
+            log.warning("Could not set the command menu for chat %s", chat_id, exc_info=True)
     except Exception:
         log.warning("Could not set the command menu for chat %s", chat_id, exc_info=True)
 
@@ -96,11 +115,15 @@ def get_db_user(update: Update):
     return db.get_user_by_tg(update.effective_user.id)
 
 
+def lang_of(user) -> str:
+    return db.user_lang(user)
+
+
 def menu(update: Update):
-    """The main menu, tailored to whether the user owns a spot."""
+    """The main menu, tailored to ownership and language."""
     user = get_db_user(update)
     owns = bool(user and db.user_owns_spot(user["id"]))
-    return main_menu(owns)
+    return main_menu(owns, db.user_lang(user))
 
 
 def is_admin(update: Update) -> bool:
@@ -142,16 +165,28 @@ def admin_tg_ids() -> list[int]:
     return unique
 
 
-async def notify_admins(context: ContextTypes.DEFAULT_TYPE, text: str, keyboard=None) -> None:
-    """Best-effort broadcast of a message to every admin."""
+def _pick(localized, lang: str):
+    if isinstance(localized, dict):
+        return localized.get(lang) or localized.get("en")
+    return localized
+
+
+async def notify_admins(context: ContextTypes.DEFAULT_TYPE, text, keyboard=None) -> None:
+    """Best-effort broadcast to every admin.
+
+    ``text``/``keyboard`` may be plain values (same for everyone) or
+    ``{"en": ..., "hy": ...}`` dicts — each admin gets their own language.
+    """
     ids = admin_tg_ids()
     if not ids:
         log.warning("notify_admins: no admins configured/found, message dropped.")
         return
     for tg_id in ids:
+        lang = db.user_lang(db.get_user_by_tg(tg_id))
         try:
             await context.bot.send_message(
-                chat_id=tg_id, text=text, reply_markup=keyboard, parse_mode="HTML"
+                chat_id=tg_id, text=_pick(text, lang),
+                reply_markup=_pick(keyboard, lang), parse_mode="HTML",
             )
         except Exception:
             log.warning("notify_admins: could not message admin %s", tg_id, exc_info=True)
@@ -192,7 +227,7 @@ async def need_registration(update: Update) -> bool:
     if get_db_user(update) is None:
         await reply(
             update,
-            "You're not registered yet. Send /start and tell me your name first.",
+            t("en", "not_registered"),
             None,
         )
         return True
@@ -225,6 +260,7 @@ __all__ = [
     "need_registration",
     "mention",
     "escape",
+    "lang_of",
     "ContextTypes",
     "role_commands",
     "set_role_commands",

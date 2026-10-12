@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from datetime import date
@@ -7,133 +8,95 @@ from telegram.ext import ApplicationHandlerStop, ContextTypes
 
 from .. import cycles as cycle_parser
 from .. import db, keyboards, layout
+from ..i18n import t
 from .common import (
     clear_role_commands,
     escape,
+    get_db_user,
     is_admin,
     is_admin_tg,
     reply,
     set_role_commands,
 )
 
-ADMIN_ONLY = "⛔ This command is for the admin only."
 CYCLES_STATE = "awaiting_cycles"
 
 
 async def _guard(update: Update) -> bool:
     if not is_admin(update):
-        await reply(update, ADMIN_ONLY, None)
+        await reply(update, t("en", "admin_only"), None)
         return True
     return False
+
+
+def _lang(update: Update) -> str:
+    return db.user_lang(get_db_user(update))
 
 
 async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
-    text = (
-        "<b>Admin commands</b>\n\n"
-        "• /adduser &lt;name&gt; — pre-create a user account\n"
-        "• /deluser &lt;name or tg-id&gt; — delete a user\n"
-        "• /makeadmin &lt;name or tg-id&gt; — grant admin rights\n"
-        "• /demote &lt;name or tg-id&gt; — remove admin rights\n"
-        "• /users — registered users and pending requests\n"
-        "• /spots — every spot, owner and today's state\n"
-        "• /assign &lt;spot#&gt; &lt;name or telegram-id&gt; — give a spot\n"
-        "• /unassign &lt;spot# or name&gt; — free a spot (or a user's spot)\n"
-        "• /settype &lt;spot#&gt; reserved|rotating — change type\n"
-        "• /rename &lt;name or telegram-id&gt; &lt;new name&gt; — fix a display name\n"
-        "• /resetclaims — clear all of today's \"I parked\" marks\n"
-        "• /cycle — show rotation cycles (who has what, until when)\n"
-        "• /addcycles — add one or more cycles by pasting a plan\n"
-        "• /delcycle &lt;id&gt; · /clearcycles — remove cycles\n\n"
-        "New people who message the bot are sent to you for approval before "
-        "they can use it.\n\n"
-        "For the 3-month rotation, use /addcycles with a block like:\n"
-        "<pre>Cycle 1 12/10/26-31/12/26\n1 - Alice\n2 - Bob</pre>"
-    )
-    await reply(update, text, None)
+    await reply(update, t(_lang(update), "admin_help"), None)
 
 
 async def cmd_adduser(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     args = context.args or []
     if not args:
-        await reply(update, "Usage: /adduser &lt;name&gt;", None)
+        await reply(update, t(lang, "usage_adduser"), None)
         return
     name = " ".join(args).strip()
     if not (1 <= len(name) <= 40):
-        await reply(update, "The name must be between 1 and 40 characters.", None)
+        await reply(update, t(lang, "name_len"), None)
         return
     created = db.add_pending_user(name)
     if created is None:
-        await reply(
-            update,
-            f"A user named <b>{escape(name)}</b> already exists. "
-            "Use /rename to change it.",
-            None,
-        )
+        await reply(update, t(lang, "user_exists", name=escape(name)), None)
         return
-    await reply(
-        update,
-        f"✅ Created <b>{escape(name)}</b>. When they send /start and type "
-        "that exact name, you'll get a prompt to confirm them.",
-        None,
-    )
+    await reply(update, t(lang, "user_created", name=escape(name)), None)
 
 
 async def cmd_deluser(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     args = context.args or []
     if not args:
-        await reply(update, "Usage: /deluser &lt;name or telegram-id&gt;", None)
+        await reply(update, t(lang, "usage_deluser"), None)
         return
     target = " ".join(args).strip()
     user = _resolve_user(target)
     if user is None:
-        await reply(
-            update,
-            f"I couldn't find a unique user matching <b>{escape(target)}</b>.\n"
-            "Use the exact name from /users, or their telegram id.",
-            None,
-        )
+        await reply(update, t(lang, "no_user_match", target=escape(target)), None)
         return
     if user["is_admin"] and db.count_admins() <= 1:
-        await reply(update, "I can't remove the last admin.", None)
+        await reply(update, t(lang, "last_admin_del"), None)
         return
     name = user["name"]
     tg_id = user["telegram_id"]
     db.delete_user(user["id"])
     if tg_id is not None:
         await clear_role_commands(context.bot, tg_id)
-    await reply(
-        update,
-        f"🗑️ Deleted <b>{escape(name)}</b>. Any spot they owned is now "
-        "unassigned and their openings/claims are gone.",
-        None,
-    )
+    await reply(update, t(lang, "user_deleted", name=escape(name)), None)
 
 
 async def cmd_makeadmin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     args = context.args or []
     if not args:
-        await reply(update, "Usage: /makeadmin &lt;name or telegram-id&gt;", None)
+        await reply(update, t(lang, "usage_makeadmin"), None)
         return
     target = " ".join(args).strip()
     user = _resolve_user(target)
     if user is None:
-        await reply(
-            update,
-            f"I couldn't find a unique user matching <b>{escape(target)}</b>.\n"
-            "Use the exact name from /users, or their telegram id.",
-            None,
-        )
+        await reply(update, t(lang, "no_user_match", target=escape(target)), None)
         return
     if user["is_admin"]:
-        await reply(update, f"<b>{escape(user['name'])}</b> is already an admin.", None)
+        await reply(update, t(lang, "already_admin", name=escape(user["name"])), None)
         return
     db.set_admin(user["id"], True)
     if user["telegram_id"] is not None:
@@ -142,37 +105,29 @@ async def cmd_makeadmin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             user["telegram_id"],
             db.user_owns_spot(user["id"]),
             True,
+            db.user_lang(user),
         )
-    await reply(
-        update,
-        f"✅ <b>{escape(user['name'])}</b> is now an admin. They get approval "
-        "requests and the admin commands.",
-        None,
-    )
+    await reply(update, t(lang, "now_admin", name=escape(user["name"])), None)
 
 
 async def cmd_demoadmin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     args = context.args or []
     if not args:
-        await reply(update, "Usage: /demote &lt;name or telegram-id&gt;", None)
+        await reply(update, t(lang, "usage_demote"), None)
         return
     target = " ".join(args).strip()
     user = _resolve_user(target)
     if user is None:
-        await reply(
-            update,
-            f"I couldn't find a unique user matching <b>{escape(target)}</b>.\n"
-            "Use the exact name from /users, or their telegram id.",
-            None,
-        )
+        await reply(update, t(lang, "no_user_match", target=escape(target)), None)
         return
     if not user["is_admin"]:
-        await reply(update, f"<b>{escape(user['name'])}</b> is not an admin.", None)
+        await reply(update, t(lang, "not_admin", name=escape(user["name"])), None)
         return
     if db.count_admins() <= 1:
-        await reply(update, "I can't demote the last admin.", None)
+        await reply(update, t(lang, "last_admin_dem"), None)
         return
     db.set_admin(user["id"], False)
     if user["telegram_id"] is not None:
@@ -181,35 +136,32 @@ async def cmd_demoadmin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             user["telegram_id"],
             db.user_owns_spot(user["id"]),
             False,
+            db.user_lang(user),
         )
-    await reply(update, f"✅ <b>{escape(user['name'])}</b> is no longer an admin.", None)
+    await reply(update, t(lang, "demoted", name=escape(user["name"])), None)
 
 
 async def cmd_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     users = db.all_users()
     requests = db.pending_requests()
 
-    lines = ["<b>Registered users</b>", ""]
+    lines = [t(lang, "users_title"), ""]
     if users:
         for u in users:
             flag = " [admin]" if u["is_admin"] else ""
             if u["telegram_id"] is None:
-                status = " — <i>waiting to join</i>"
+                status = t(lang, "users_waiting")
             else:
                 status = f" — id {u['id']}, tg {u['telegram_id']}"
             lines.append(f"• <b>{escape(u['name'])}</b>{flag}{status}")
     else:
-        lines.append("<i>none yet</i>")
+        lines.append(t(lang, "users_none"))
 
     if requests:
-        lines += [
-            "",
-            f"<b>Pending approval</b> ({len(requests)}) — buttons below, "
-            "or use /approve &lt;tg-id&gt; / /reject &lt;tg-id&gt;",
-            "",
-        ]
+        lines += ["", t(lang, "pending_title", n=len(requests)), ""]
         for r in requests:
             username = f" (@{escape(r['username'])})" if r["username"] else ""
             lines.append(
@@ -223,14 +175,12 @@ async def cmd_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     for r in requests:
         username = f" (@{escape(r['username'])})" if r["username"] else ""
         text = (
-            "🔔 <b>Registration request</b>\n\n"
-            f"Name: <b>{escape(r['name'])}</b>\n"
-            f"Telegram id: <code>{r['telegram_id']}</code>{username}\n\n"
-            "Approve to let them into the bot."
+            t(lang, "req_title") + "\n\n"
+            + t(lang, "req_body", name=escape(r["name"]), tg=r["telegram_id"], username=username)
         )
         try:
             await target.reply_text(
-                text, reply_markup=keyboards.approval_kb(r["id"]), parse_mode="HTML"
+                text, reply_markup=keyboards.approval_kb(r["id"], lang), parse_mode="HTML"
             )
         except Exception:
             pass
@@ -239,13 +189,14 @@ async def cmd_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     args = context.args or []
     if not args or not args[0].lstrip("-").isdigit():
-        await reply(update, "Usage: /approve &lt;telegram-id&gt;", None)
+        await reply(update, t(lang, "usage_approve"), None)
         return
     req = db.latest_request(int(args[0]))
     if req is None or req["status"] != "pending":
-        await reply(update, "No pending request for that id.", None)
+        await reply(update, t(lang, "no_pending"), None)
         return
     await _resolve_request(update, context, req["id"], approve=True)
 
@@ -253,13 +204,14 @@ async def cmd_approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def cmd_reject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     args = context.args or []
     if not args or not args[0].lstrip("-").isdigit():
-        await reply(update, "Usage: /reject &lt;telegram-id&gt;", None)
+        await reply(update, t(lang, "usage_reject"), None)
         return
     req = db.latest_request(int(args[0]))
     if req is None or req["status"] != "pending":
-        await reply(update, "No pending request for that id.", None)
+        await reply(update, t(lang, "no_pending"), None)
         return
     await _resolve_request(update, context, req["id"], approve=False)
 
@@ -279,11 +231,12 @@ async def on_approval_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def _resolve_request(update: Update, context: ContextTypes.DEFAULT_TYPE, req_id: int, approve: bool) -> None:
     req = db.get_request(req_id)
+    lang = _lang(update)
     if req is None:
-        await reply(update, "That request no longer exists.", None)
+        await reply(update, t(lang, "req_gone"), None)
         return
     if req["status"] != "pending":
-        await reply(update, "That request was already handled.", None)
+        await reply(update, t(lang, "req_handled"), None)
         return
 
     tg_id = req["telegram_id"]
@@ -292,37 +245,26 @@ async def _resolve_request(update: Update, context: ContextTypes.DEFAULT_TYPE, r
         user = db.approve_request(req_id)
         if user is None:
             db.reject_request(req_id)
-            await reply(
-                update,
-                f"⚠️ Couldn't approve <b>{name}</b> — that name or Telegram "
-                "account is already used by another user. Use /rename to free "
-                "the name, or ask them for a different one.",
-                None,
-            )
+            await reply(update, t(lang, "approve_conflict", name=name), None)
             return
-        await reply(update, f"✅ Approved <b>{escape(user['name'])}</b>.", None)
+        await reply(update, t(lang, "approved", name=escape(user["name"])), None)
         await _notify_user(
             context,
             tg_id,
-            "🎉 <b>You're approved!</b> Welcome to the parking bot.\n\n"
-            "Use /menu to get started.",
-            keyboards.main_menu(db.user_owns_spot(user["id"])),
+            t(db.user_lang(user), "approved_dm"),
+            keyboards.main_menu(db.user_owns_spot(user["id"]), db.user_lang(user)),
         )
         await set_role_commands(
             context.bot,
             tg_id,
             db.user_owns_spot(user["id"]),
             bool(user["is_admin"]),
+            db.user_lang(user),
         )
     else:
         db.reject_request(req_id)
-        await reply(update, f"⛔ Rejected <b>{name}</b>.", None)
-        await _notify_user(
-            context,
-            tg_id,
-            "Your registration request was <b>rejected</b> by the admin.",
-            None,
-        )
+        await reply(update, t(lang, "rejected", name=name), None)
+        await _notify_user(context, tg_id, t("en", "rejected_dm"), None)
 
 
 async def _notify_user(context: ContextTypes.DEFAULT_TYPE, tg_id: int, text: str, keyboard=None) -> None:
@@ -338,25 +280,27 @@ async def _notify_user(context: ContextTypes.DEFAULT_TYPE, tg_id: int, text: str
 async def cmd_spots(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     day = db.today()
-    lines = [f"<b>Spots</b> ({day})", ""]
+    lines = [t(lang, "spots_title", day=day), ""]
     for spot in db.all_spots():
         state, other, _ = db.spot_status(spot, day)
         spec = layout.by_number(spot["number"])
         floor = f" {escape(spec['floor'])}" if spec else ""
         owner_id = db.effective_owner_id(spot, day)
         owner = db.get_user(owner_id) if owner_id else None
-        owner_name = escape(owner["name"]) if owner else "<i>unassigned</i>"
+        owner_name = escape(owner["name"]) if owner else t(lang, "no_owner")
+        stype = t(lang, "type_" + spot["type"])
         if state == db.OPEN:
-            state_txt = f"🔓 open (by {escape(other['name']) if other else '?'})"
+            state_txt = t(lang, "spot_open_by", who=escape(other["name"]) if other else "?")
         elif state == db.OCCUPIED:
-            state_txt = f"🚗 taken by {escape(other['name']) if other else '?'}"
+            state_txt = t(lang, "spot_taken_by", who=escape(other["name"]) if other else "?")
         elif state == db.OWNER:
-            state_txt = "🔒 with owner"
+            state_txt = t(lang, "spot_owner")
         else:
-            state_txt = "⚪ unassigned"
+            state_txt = t(lang, "spot_free")
         lines.append(
-            f"<b>#{spot['number']}</b>{floor} ({escape(spot['type'])}) — owner: "
+            f"<b>#{spot['number']}</b>{floor} ({stype}) — owner: "
             f"{owner_name} — {state_txt}"
         )
     await reply(update, "\n".join(lines), None)
@@ -365,30 +309,26 @@ async def cmd_spots(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_assign(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     args = context.args or []
     if len(args) < 2:
-        await reply(update, "Usage: /assign &lt;spot#&gt; &lt;name or telegram-id&gt;", None)
+        await reply(update, t(lang, "usage_assign"), None)
         return
     try:
         number = int(args[0])
     except ValueError:
-        await reply(update, "The spot number must be a number.", None)
+        await reply(update, t(lang, "spot_num"), None)
         return
 
     spot = db.get_spot_by_number(number)
     if spot is None:
-        await reply(update, f"There is no spot #{number}.", None)
+        await reply(update, t(lang, "no_spot_n", n=number), None)
         return
 
     target = " ".join(args[1:]).strip()
     user = _resolve_user(target)
     if user is None:
-        await reply(
-            update,
-            f"I couldn't find a unique user matching <b>{escape(target)}</b>.\n"
-            "Use the exact name from /users, or their telegram id.",
-            None,
-        )
+        await reply(update, t(lang, "no_user_match", target=escape(target)), None)
         return
 
     # A user can only own one spot.
@@ -396,8 +336,7 @@ async def cmd_assign(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if current is not None and current["id"] != spot["id"]:
         await reply(
             update,
-            f"{escape(user['name'])} already owns spot "
-            f"<b>#{current['number']}</b>. Unassign it first.",
+            t(lang, "owns_other", name=escape(user["name"]), n=current["number"]),
             None,
         )
         return
@@ -405,59 +344,47 @@ async def cmd_assign(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     db.assign_spot(number, user["id"])
     if user["telegram_id"] is not None:
         await set_role_commands(
-            context.bot, user["telegram_id"], True, bool(user["is_admin"])
+            context.bot, user["telegram_id"], True, bool(user["is_admin"]),
+            db.user_lang(user),
         )
     note = ""
     if db.current_cycle() is not None:
-        note = (
-            "\n\n⚠️ A rotation cycle is active, so it overrides manual owners "
-            "today. Use /addcycles or /clearcycles."
-        )
+        note = t(lang, "cycle_note")
     await reply(
-        update,
-        f"✅ Spot <b>#{number}</b> is now assigned to "
-        f"<b>{escape(user['name'])}</b>.{note}",
-        None,
+        update, t(lang, "assigned", n=number, name=escape(user["name"]), note=note), None
     )
 
 
 async def cmd_rename(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     args = context.args or []
     if len(args) < 2:
-        await reply(update, "Usage: /rename &lt;name or telegram-id&gt; &lt;new name&gt;", None)
+        await reply(update, t(lang, "usage_rename"), None)
         return
     user = _resolve_user(args[0])
     if user is None:
-        await reply(
-            update,
-            f"I couldn't find a unique user matching <b>{escape(args[0])}</b>.",
-            None,
-        )
+        await reply(update, t(lang, "no_user_match", target=escape(args[0])), None)
         return
     new_name = " ".join(args[1:]).strip()
     if not (1 <= len(new_name) <= 40):
-        await reply(update, "The new name must be between 1 and 40 characters.", None)
+        await reply(update, t(lang, "new_name_len"), None)
         return
     if db.name_exists(new_name, exclude_id=user["id"]):
-        await reply(
-            update,
-            f"Another user is already named <b>{escape(new_name)}</b>. "
-            "Names must be unique.",
-            None,
-        )
+        await reply(update, t(lang, "name_used", name=escape(new_name)), None)
         return
     db.rename_user(user["id"], new_name)
-    await reply(update, f"✏️ User renamed to <b>{escape(new_name)}</b>.", None)
+    await reply(update, t(lang, "renamed", name=escape(new_name)), None)
 
 
 async def cmd_unassign(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     args = context.args or []
     if not args:
-        await reply(update, "Usage: /unassign &lt;spot# or name&gt;", None)
+        await reply(update, t(lang, "usage_unassign"), None)
         return
     target = " ".join(args).strip()
     spot = None
@@ -466,64 +393,55 @@ async def cmd_unassign(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if spot is None:
         user = _resolve_user(target)
         if user is None:
-            await reply(
-                update,
-                f"There is no spot <b>#{escape(target)}</b> and no user matching "
-                f"<b>{escape(target)}</b>.",
-                None,
-            )
+            await reply(update, t(lang, "no_spot_user", target=escape(target)), None)
             return
         spot = db.manual_spot(user["id"])
         if spot is None:
-            await reply(
-                update,
-                f"<b>{escape(user['name'])}</b> doesn't own a spot.",
-                None,
-            )
+            await reply(update, t(lang, "owns_nothing", name=escape(user["name"])), None)
             return
     owner = db.get_user(spot["owner_user_id"]) if spot["owner_user_id"] else None
     db.unassign_spot(spot["number"])
     if owner is not None and owner["telegram_id"] is not None:
         await set_role_commands(
-            context.bot, owner["telegram_id"], False, bool(owner["is_admin"])
+            context.bot, owner["telegram_id"], False, bool(owner["is_admin"]),
+            db.user_lang(owner),
         )
     note = ""
     if db.current_cycle() is not None:
-        note = (
-            "\n\n⚠️ A rotation cycle is active, so it overrides manual owners "
-            "today. The change takes visible effect once no cycle covers the day."
-        )
-    await reply(
-        update, f"⚪ Spot <b>#{spot['number']}</b> is now unassigned.{note}", None
-    )
+        note = t(lang, "cycle_note_un")
+    await reply(update, t(lang, "unassigned", n=spot["number"], note=note), None)
 
 
 async def cmd_settype(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     args = context.args or []
     if len(args) < 2 or args[1].lower() not in ("reserved", "rotating"):
-        await reply(update, "Usage: /settype &lt;spot#&gt; reserved|rotating", None)
+        await reply(update, t(lang, "usage_settype"), None)
         return
     try:
         number = int(args[0])
     except ValueError:
-        await reply(update, "The spot number must be a number.", None)
+        await reply(update, t(lang, "spot_num"), None)
         return
     spot = db.get_spot_by_number(number)
     if spot is None:
-        await reply(update, f"There is no spot #{number}.", None)
+        await reply(update, t(lang, "no_spot_n", n=number), None)
         return
     new_type = args[1].lower()
     db.set_spot_type(number, new_type)
-    await reply(update, f"✅ Spot <b>#{number}</b> is now <b>{new_type}</b>.", None)
+    await reply(
+        update, t(lang, "settype_ok", n=number, type=t(lang, f"type_{new_type}")), None
+    )
 
 
 async def cmd_resetclaims(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     count = db.reset_claims(day=db.today())
-    await reply(update, f"🧹 Cleared {count} active claim(s) for today.", None)
+    await reply(update, t(lang, "resetclaims", n=count), None)
 
 
 def _resolve_user(target: str):
@@ -561,34 +479,32 @@ async def _refresh_all_commands(context: ContextTypes.DEFAULT_TYPE) -> None:
             u["telegram_id"],
             db.user_owns_spot(u["id"]),
             bool(u["is_admin"]),
+            db.user_lang(u),
         )
 
 
 async def cmd_cycle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     all_cycles = db.all_cycles()
     if not all_cycles:
-        await reply(
-            update,
-            "No rotation cycles yet. Add a plan with /addcycles.",
-            None,
-        )
+        await reply(update, t(lang, "cycle_none"), None)
         return
 
     current = db.current_cycle()
-    lines = ["🔄 <b>Rotation cycles</b>", ""]
+    lines = [t(lang, "cycle_title"), ""]
     if current is not None:
         until = _pretty_date(current["end_date"])
-        lines.append(f"▶️ <b>Current cycle</b> — until <b>{until}</b>")
+        lines.append(t(lang, "cycle_current", until=until))
         for a in db.cycle_assignments(current["id"]):
             lines.append(f"   <b>#{a['spot_number']}</b> — {escape(a['user_name'])}")
         lines.append("")
     else:
-        lines.append("<i>No cycle is active today.</i>")
+        lines.append(t(lang, "cycle_idle"))
         lines.append("")
 
-    lines.append("<b>All cycles</b>")
+    lines.append(t(lang, "cycle_all"))
     for c in all_cycles:
         marker = "▶️ " if current is not None and c["id"] == current["id"] else "• "
         label = escape(c["label"]) if c["label"] else f"Cycle {c['id']}"
@@ -602,22 +518,9 @@ async def cmd_cycle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_addcycles(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     context.chat_data[CYCLES_STATE] = True
-    text = (
-        "Send the rotation plan as text. One block per cycle:\n\n"
-        "<pre>Cycle 1 12/10/26-31/12/26\n"
-        "1 - Test\n"
-        "2 - Test2\n"
-        "Cycle 2 01/01/27-31/03/27\n"
-        "1 - test3\n"
-        "2 - test2</pre>\n\n"
-        "Dates are day-first (<b>DD/MM/YY</b>). Names that aren't known yet are "
-        "created automatically. One user owns one spot: a name may appear only "
-        "once per cycle, and while a cycle is active, spots you don't list "
-        "count as unassigned (manual owners return when no cycle is active).\n"
-        "Send /cancel to abort."
-    )
-    await reply(update, text, None)
+    await reply(update, t(lang, "addcycles_prompt"), None)
 
 
 def _resolve_or_create(name: str, created: list[str]) -> int:
@@ -641,30 +544,25 @@ async def on_cycles_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if update.message is None:
         return
 
+    admin = db.get_user_by_tg(update.effective_user.id)
+    lang = db.user_lang(admin)
     text = (update.message.text or "").strip()
     if text.startswith("/"):
         context.chat_data.pop(CYCLES_STATE, None)
-        await reply(update, "Cancelled the cycle entry.", None)
+        await reply(update, t(lang, "cycles_cancelled"), None)
         return  # let the command be handled normally in the main group
 
     try:
         parsed = cycle_parser.parse_cycles(text)
     except cycle_parser.CycleParseError as exc:
-        await reply(
-            update, f"⚠️ {escape(str(exc))}\n\nFix it and send again, or /cancel.", None
-        )
+        await reply(update, t(lang, "parse_fix", err=escape(str(exc))), None)
         raise ApplicationHandlerStop
 
     known_spots = {s["number"] for s in db.all_spots()}
     for cyc in parsed:
         for number, _name in cyc.assignments:
             if number not in known_spots:
-                await reply(
-                    update,
-                    f"⚠️ Spot <b>#{number}</b> doesn't exist. Nothing was saved — "
-                    "fix it and send again, or /cancel.",
-                    None,
-                )
+                await reply(update, t(lang, "cycles_no_exist", n=number), None)
                 raise ApplicationHandlerStop
 
     context.chat_data.pop(CYCLES_STATE, None)
@@ -679,18 +577,14 @@ async def on_cycles_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             if number in seen_numbers:
                 await reply(
                     update,
-                    f"⚠️ Spot <b>#{number}</b> is listed twice in "
-                    f"<b>{escape(cyc.label or 'a cycle')}</b>. Nothing was saved — "
-                    "fix it and send again, or /cancel.",
+                    t(lang, "cycles_dup_spot", n=number, label=escape(cyc.label or "a cycle")),
                     None,
                 )
                 return
             if key in seen_names:
                 await reply(
                     update,
-                    f"⚠️ <b>{escape(name)}</b> is listed twice in "
-                    f"<b>{escape(cyc.label or 'a cycle')}</b> — one user can own "
-                    "one spot. Nothing was saved — fix it and send again, or /cancel.",
+                    t(lang, "cycles_dup_user", name=escape(name), label=escape(cyc.label or "a cycle")),
                     None,
                 )
                 return
@@ -703,12 +597,7 @@ async def on_cycles_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         try:
             cycle_id = db.add_cycle(cyc.start, cyc.end, assignments, label=cyc.label)
         except ValueError as exc:
-            await reply(
-                update,
-                f"⚠️ {escape(str(exc))} Nothing was saved — "
-                "fix it and send again, or /cancel.",
-                None,
-            )
+            await reply(update, t(lang, "cycles_save_fail", err=escape(str(exc))), None)
             return
         label = cyc.label or f"Cycle {cycle_id}"
         summary.append(
@@ -718,17 +607,13 @@ async def on_cycles_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await _refresh_all_commands(context)
 
-    lines = [f"✅ Added <b>{len(parsed)}</b> cycle(s):", ""]
+    lines = [t(lang, "cycles_added", n=len(parsed)), ""]
     lines += summary
     if created:
-        lines += ["", "👤 Created new (pending) users: " + escape(", ".join(created))]
+        lines += ["", t(lang, "cycles_created", names=escape(", ".join(created)))]
     current = db.current_cycle()
     if current is not None:
-        lines += [
-            "",
-            f"▶️ The cycle active today now ends on "
-            f"<b>{_pretty_date(current['end_date'])}</b>.",
-        ]
+        lines += ["", t(lang, "cycles_live", until=_pretty_date(current["end_date"]))]
     await reply(update, "\n".join(lines), None)
     raise ApplicationHandlerStop
 
@@ -736,27 +621,25 @@ async def on_cycles_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def cmd_delcycle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     args = context.args or []
     if not args or not args[0].isdigit():
-        await reply(update, "Usage: /delcycle &lt;id&gt;  (see ids in /cycle)", None)
+        await reply(update, t(lang, "usage_delcycle"), None)
         return
     cycle_id = int(args[0])
     if db.get_cycle(cycle_id) is None:
-        await reply(update, f"There is no cycle with id {cycle_id}.", None)
+        await reply(update, t(lang, "no_cycle", id=cycle_id), None)
         return
     db.delete_cycle(cycle_id)
     await _refresh_all_commands(context)
-    await reply(update, f"🗑️ Deleted cycle {cycle_id}.", None)
+    await reply(update, t(lang, "cycle_deleted", id=cycle_id), None)
 
 
 async def cmd_clearcycles(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await _guard(update):
         return
+    lang = _lang(update)
     count = len(db.all_cycles())
     db.delete_all_cycles()
     await _refresh_all_commands(context)
-    await reply(
-        update,
-        f"🧹 Removed {count} cycle(s). Spots fall back to their manual owners.",
-        None,
-    )
+    await reply(update, t(lang, "cycles_cleared", n=count), None)

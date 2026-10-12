@@ -19,6 +19,7 @@ from .handlers.common import (
     role_commands,
     set_role_commands,
 )
+from .i18n import t
 
 
 async def _post_init(application: Application) -> None:
@@ -33,6 +34,7 @@ async def _post_init(application: Application) -> None:
             tg_id,
             db.user_owns_spot(db_user["id"]),
             bool(db_user["is_admin"]),
+            db.user_lang(db_user),
         )
     admin_id = config.admin_id()
     if admin_id is not None and db.get_user_by_tg(admin_id) is None:
@@ -65,18 +67,12 @@ def _schedule_daily_sweep(app: Application) -> None:
 
     async def _expire_yesterday(context) -> None:
         for row in db.expire_old_claims():
+            claimer = db.get_user(row["user_id"])
+            lang = db.user_lang(claimer)
             if row["still_open"]:
-                text = (
-                    "🌅 New day — your claim on spot "
-                    f"<b>#{row['spot_number']}</b> is released automatically. "
-                    "The owner is still sharing it today, so others can claim it."
-                )
+                text = t(lang, "sweep_open", n=row["spot_number"])
             else:
-                text = (
-                    "🌅 New day — your claim on spot "
-                    f"<b>#{row['spot_number']}</b> has ended because the owner "
-                    "is using the spot again."
-                )
+                text = t(lang, "sweep_closed", n=row["spot_number"])
             try:
                 await context.bot.send_message(
                     chat_id=row["telegram_id"], text=text, parse_mode="HTML"
@@ -97,6 +93,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("start", registration.cmd_start))
     app.add_handler(CommandHandler("menu", registration.cmd_menu))
     app.add_handler(CommandHandler("help", registration.cmd_help))
+    app.add_handler(CommandHandler("language", user.cmd_language))
 
     # User features
     app.add_handler(CommandHandler("status", user.cmd_status))

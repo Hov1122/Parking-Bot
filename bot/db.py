@@ -132,6 +132,9 @@ def _migrate(c: sqlite3.Connection) -> None:
         openings_cols = {row[1] for row in c.execute("PRAGMA table_info(openings)")}
         if "dates" not in openings_cols:
             c.execute("ALTER TABLE openings ADD COLUMN dates TEXT")
+        users_cols = {row[1] for row in c.execute("PRAGMA table_info(users)")}
+        if "lang" not in users_cols:
+            c.execute("ALTER TABLE users ADD COLUMN lang TEXT NOT NULL DEFAULT 'en'")
         c.commit()
     finally:
         c.execute("PRAGMA foreign_keys = ON")
@@ -278,6 +281,27 @@ def rename_user(user_id: int, name: str) -> None:
     with _lock:
         conn().execute("UPDATE users SET name = ? WHERE id = ?", (name, user_id))
         conn().commit()
+
+
+VALID_LANGS = ("en", "hy")
+
+
+def user_lang(user) -> str:
+    """Interface language for a user row ('en' fallback)."""
+    try:
+        lang = user["lang"]
+    except (KeyError, IndexError, TypeError):
+        return "en"
+    return lang if lang in VALID_LANGS else "en"
+
+
+def set_lang(user_id: int, lang: str) -> str:
+    """Persist the interface language; returns the stored value."""
+    lang = lang if lang in VALID_LANGS else "en"
+    with _lock:
+        conn().execute("UPDATE users SET lang = ? WHERE id = ?", (lang, user_id))
+        conn().commit()
+    return lang
 
 
 def all_users() -> List[sqlite3.Row]:

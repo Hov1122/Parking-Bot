@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import calendar
@@ -6,51 +7,55 @@ from typing import Iterable, List, Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-CANCEL = InlineKeyboardButton("✖️ Cancel", callback_data="cancel")
-_WEEKDAYS = ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
+from .i18n import month_abbr, month_name, t, weekdays
 
 
-def main_menu(owns_spot: Optional[bool] = None) -> InlineKeyboardMarkup:
-    """Main menu, tailored to the user's role.
+def _cancel(lang: str) -> InlineKeyboardButton:
+    return InlineKeyboardButton(t(lang, "btn_cancel"), callback_data="cancel")
+
+
+def main_menu(owns_spot: Optional[bool] = None, lang: str = "en") -> InlineKeyboardMarkup:
+    """Main menu, tailored to the user's role and language.
 
     ``owns_spot=True`` shows open/close; ``owns_spot=False`` shows available +
     claim/release; ``None`` shows everything (fallback).
     """
     rows = [
         [
-            InlineKeyboardButton("📋 My status", callback_data="status"),
-            InlineKeyboardButton("🗺️ Where I park", callback_data="map"),
+            InlineKeyboardButton(t(lang, "btn_status"), callback_data="status"),
+            InlineKeyboardButton(t(lang, "btn_map"), callback_data="map"),
         ],
     ]
     if owns_spot is True:
         rows.append(
             [
-                InlineKeyboardButton("🔓 Open my spot", callback_data="open"),
-                InlineKeyboardButton("🔒 Close my spot", callback_data="close"),
+                InlineKeyboardButton(t(lang, "btn_open"), callback_data="open"),
+                InlineKeyboardButton(t(lang, "btn_close"), callback_data="close"),
             ]
         )
     elif owns_spot is False:
-        rows.append([InlineKeyboardButton("🅿️ Available spots", callback_data="avail")])
+        rows.append([InlineKeyboardButton(t(lang, "btn_avail"), callback_data="avail")])
         rows.append(
             [
-                InlineKeyboardButton("🚗 I parked", callback_data="claim"),
-                InlineKeyboardButton("✅ I left (release)", callback_data="release"),
+                InlineKeyboardButton(t(lang, "btn_claim"), callback_data="claim"),
+                InlineKeyboardButton(t(lang, "btn_release"), callback_data="release"),
             ]
         )
     else:
-        rows.append([InlineKeyboardButton("🅿️ Available spots", callback_data="avail")])
+        rows.append([InlineKeyboardButton(t(lang, "btn_avail"), callback_data="avail")])
         rows.append(
             [
-                InlineKeyboardButton("🔓 Open my spot", callback_data="open"),
-                InlineKeyboardButton("🔒 Close my spot", callback_data="close"),
+                InlineKeyboardButton(t(lang, "btn_open"), callback_data="open"),
+                InlineKeyboardButton(t(lang, "btn_close"), callback_data="close"),
             ]
         )
         rows.append(
             [
-                InlineKeyboardButton("🚗 I parked", callback_data="claim"),
-                InlineKeyboardButton("✅ I left (release)", callback_data="release"),
+                InlineKeyboardButton(t(lang, "btn_claim"), callback_data="claim"),
+                InlineKeyboardButton(t(lang, "btn_release"), callback_data="release"),
             ]
         )
+    rows.append([InlineKeyboardButton(t(lang, "btn_lang"), callback_data="lang")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -60,6 +65,7 @@ def datepicker_kb(
     month: int,
     min_day: Optional[str] = None,
     max_day: Optional[str] = None,
+    lang: str = "en",
 ) -> InlineKeyboardMarkup:
     """A one-month calendar. Tapping a day toggles it (shown with a dot).
 
@@ -72,10 +78,10 @@ def datepicker_kb(
     rows: List[List[InlineKeyboardButton]] = [
         [
             InlineKeyboardButton(
-                f"{calendar.month_name[month]} {year} ▾", callback_data="cal:months"
+                f"{month_name(month, lang)} {year} ▾", callback_data="cal:months"
             )
         ],
-        [InlineKeyboardButton(w, callback_data="cal:ignore") for w in _WEEKDAYS],
+        [InlineKeyboardButton(w, callback_data="cal:ignore") for w in weekdays(lang)],
     ]
     for week in calendar.Calendar(firstweekday=0).monthdayscalendar(year, month):
         row: List[InlineKeyboardButton] = []
@@ -95,41 +101,42 @@ def datepicker_kb(
     rows.append(
         [
             InlineKeyboardButton("◀", callback_data="cal:prev"),
-            InlineKeyboardButton("✅ Open these days", callback_data="cal:ok"),
+            InlineKeyboardButton(t(lang, "btn_open_days"), callback_data="cal:ok"),
             InlineKeyboardButton("▶", callback_data="cal:next"),
         ]
     )
     rows.append(
         [
-            InlineKeyboardButton("♾️ Until I close it", callback_data="cal:until"),
-            CANCEL,
+            InlineKeyboardButton(t(lang, "btn_until"), callback_data="cal:until"),
+            _cancel(lang),
         ]
     )
     return InlineKeyboardMarkup(rows)
 
 
-def approval_kb(request_id: int) -> InlineKeyboardMarkup:
+def approval_kb(request_id: int, lang: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("✅ Approve", callback_data=f"appr:{request_id}"),
-                InlineKeyboardButton("⛔ Reject", callback_data=f"rej:{request_id}"),
+                InlineKeyboardButton(t(lang, "btn_approve"), callback_data=f"appr:{request_id}"),
+                InlineKeyboardButton(t(lang, "btn_reject"), callback_data=f"rej:{request_id}"),
             ]
         ]
     )
 
 
 def map_nav_kb(
-    prev_day: str, next_day: str, today: str, view_day: Optional[str] = None
+    prev_day: str, next_day: str, today: str, view_day: Optional[str] = None,
+    lang: str = "en",
 ) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton("◀", callback_data=f"map:day:{prev_day}"),
-                InlineKeyboardButton("📍 Today", callback_data=f"map:day:{today}"),
+                InlineKeyboardButton(t(lang, "btn_today"), callback_data=f"map:day:{today}"),
                 InlineKeyboardButton("▶", callback_data=f"map:day:{next_day}"),
             ],
-            [InlineKeyboardButton("📅 Pick a date", callback_data=f"map:pick:{view_day or today}")],
+            [InlineKeyboardButton(t(lang, "btn_pick"), callback_data=f"map:pick:{view_day or today}")],
         ]
     )
 
@@ -141,6 +148,7 @@ def map_calendar_kb(
     min_day: Optional[str] = None,
     max_day: Optional[str] = None,
     today: Optional[str] = None,
+    lang: str = "en",
 ) -> InlineKeyboardMarkup:
     """Single-date calendar used by the map's "Pick a date" screen.
 
@@ -149,11 +157,11 @@ def map_calendar_kb(
     rows: List[List[InlineKeyboardButton]] = [
         [
             InlineKeyboardButton(
-                f"{calendar.month_name[month]} {year} ▾",
+                f"{month_name(month, lang)} {year} ▾",
                 callback_data=f"mapcal:months:{year:04d}-{month:02d}",
             )
         ],
-        [InlineKeyboardButton(w, callback_data="mapcal:ignore") for w in _WEEKDAYS],
+        [InlineKeyboardButton(w, callback_data="mapcal:ignore") for w in weekdays(lang)],
     ]
     for week in calendar.Calendar(firstweekday=0).monthdayscalendar(year, month):
         row: List[InlineKeyboardButton] = []
@@ -175,7 +183,7 @@ def map_calendar_kb(
             InlineKeyboardButton(
                 "◀", callback_data=f"mapcal:nav:{year:04d}-{month:02d}:prev"
             ),
-            InlineKeyboardButton("📍 Today", callback_data=f"map:day:{today or sel_day}"),
+            InlineKeyboardButton(t(lang, "btn_today"), callback_data=f"map:day:{today or sel_day}"),
             InlineKeyboardButton(
                 "▶", callback_data=f"mapcal:nav:{year:04d}-{month:02d}:next"
             ),
@@ -190,6 +198,7 @@ def month_grid_kb(
     min_ym: Optional[tuple] = None,
     max_ym: Optional[tuple] = None,
     back_callback: Optional[str] = None,
+    lang: str = "en",
 ) -> InlineKeyboardMarkup:
     """Year view: 12 months plus year navigation. Tapping a month jumps there.
 
@@ -218,7 +227,7 @@ def month_grid_kb(
         else:
             row.append(
                 InlineKeyboardButton(
-                    calendar.month_abbr[m],
+                    month_abbr(m, lang),
                     callback_data=f"{prefix}:month:{year:04d}-{m:02d}",
                 )
             )
@@ -229,12 +238,12 @@ def month_grid_kb(
         rows.append(row)
     if back_callback:
         rows.append(
-            [InlineKeyboardButton("◀ Back to days", callback_data=back_callback)]
+            [InlineKeyboardButton(t(lang, "btn_back_days"), callback_data=back_callback)]
         )
     return InlineKeyboardMarkup(rows)
 
 
-def close_days_kb(days: List[str], selected: Iterable[str]) -> InlineKeyboardMarkup:
+def close_days_kb(days: List[str], selected: Iterable[str], lang: str = "en") -> InlineKeyboardMarkup:
     """List the spot's currently-open days as toggles for taking days back."""
     chosen = set(selected)
     rows: List[List[InlineKeyboardButton]] = []
@@ -242,10 +251,12 @@ def close_days_kb(days: List[str], selected: Iterable[str]) -> InlineKeyboardMar
     for iso in days:
         d = date.fromisoformat(iso)
         mark = "•" if iso in chosen else ""
+        if lang == "hy":
+            label = f"{mark}{d.day:02d}.{d.month:02d}"
+        else:
+            label = f"{mark}{d.strftime('%a %d %b')}"
         row.append(
-            InlineKeyboardButton(
-                f"{mark}{d.strftime('%a %d %b')}", callback_data=f"clz:day:{iso}"
-            )
+            InlineKeyboardButton(label, callback_data=f"clz:day:{iso}")
         )
         if len(row) == 3:
             rows.append(row)
@@ -253,27 +264,40 @@ def close_days_kb(days: List[str], selected: Iterable[str]) -> InlineKeyboardMar
     if row:
         rows.append(row)
     rows.append(
-        [InlineKeyboardButton("🔒 Close selected days", callback_data="clz:ok")]
+        [InlineKeyboardButton(t(lang, "btn_close_days"), callback_data="clz:ok")]
     )
     rows.append(
         [
-            InlineKeyboardButton("🔒 Close ALL days", callback_data="clz:all"),
-            CANCEL,
+            InlineKeyboardButton(t(lang, "btn_close_all"), callback_data="clz:all"),
+            _cancel(lang),
         ]
     )
     return InlineKeyboardMarkup(rows)
 
 
-def claim_menu(available: List[tuple[int, str]]) -> InlineKeyboardMarkup:
+def claim_menu(available: List[tuple[int, str]], lang: str = "en") -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(label, callback_data=f"claim:{number}")]
         for number, label in available
     ]
-    rows.append([CANCEL])
+    rows.append([_cancel(lang)])
     return InlineKeyboardMarkup(rows)
 
 
-def back_menu() -> InlineKeyboardMarkup:
+def back_menu(lang: str = "en") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("🏠 Main menu", callback_data="menu")]]
+        [[InlineKeyboardButton(t(lang, "btn_menu"), callback_data="menu")]]
+    )
+
+
+def language_kb(lang: str = "en") -> InlineKeyboardMarkup:
+    """Explicit language choice: English or Armenian."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("🇬🇧 English", callback_data="lang:set:en"),
+                InlineKeyboardButton("🇦🇲 Հայերեն", callback_data="lang:set:hy"),
+            ],
+            [_cancel(lang)],
+        ]
     )
